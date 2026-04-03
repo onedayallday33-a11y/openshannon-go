@@ -5,98 +5,118 @@ import (
 )
 
 var (
-	// Brand Colors from OpenClaude Reference
-	shannonOrange = lipgloss.Color("#D97706") // Sunset Orange
-	shannonSlate  = lipgloss.Color("#475569") // Muted Slate
-	shannonDark   = lipgloss.Color("#0F172A") // Deep Background
-	shannonGreen  = lipgloss.Color("#10B981") // Success Green (Muted)
-	
-	// ASCII Banner Style
+	// Core Colors
+	orangePrimary   = lipgloss.Color("#D97706") // Sunset Orange
+	orangeSecondary = lipgloss.Color("#F59E0B") // Amber
+	slatePrimary    = lipgloss.Color("#1E293B") // Dark Slate
+	slateSecondary  = lipgloss.Color("#475569") // Muted Slate
+	bgDeep          = lipgloss.Color("#0F172A") // Midnight Background
+	textMain        = lipgloss.Color("#E2E8F0") // Off-white text
+
+	// Component Styles
 	bannerStyle = lipgloss.NewStyle().
-			Foreground(shannonOrange).
+			Foreground(orangePrimary).
 			Bold(true).
 			MarginLeft(2).
 			MarginTop(1)
-			
+
 	taglineStyle = lipgloss.NewStyle().
-			Foreground(shannonSlate).
+			Foreground(slateSecondary).
 			Italic(true).
 			MarginLeft(4).
 			MarginBottom(1)
-			
-	// Info Box Style (Rounded like reference)
+
+	// Sticky Header Info
 	infoBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(shannonSlate).
-			Padding(0, 1).
-			MarginLeft(2).
-			MarginBottom(1)
-			
+			BorderForeground(slateSecondary).
+			Padding(1, 2).
+			Margin(0, 2)
+
 	labelStyle = lipgloss.NewStyle().
-			Foreground(shannonOrange).
+			Foreground(orangeSecondary).
+			Bold(true).
 			Width(10)
-			
+
 	valueStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#E2E8F0"))
-			
-	// Text Styles
+			Foreground(textMain)
+
+	// Chat Blocks
 	roleUserStyle = lipgloss.NewStyle().
-			Foreground(shannonOrange).
+			Foreground(orangePrimary).
+			Background(lipgloss.Color("#2D1D05")). // Subtle orange tint
 			Bold(true).
 			Padding(0, 1)
-			
+
 	roleAssistantStyle = lipgloss.NewStyle().
-			Foreground(shannonOrange).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#1E3A8A")). // Subtle blue/slate background
 			Bold(true).
 			Padding(0, 1)
-			
+
+	// Viewport Layout
+	viewportStyle = lipgloss.NewStyle().
+			Padding(0, 2)
+
+	// Footer / Input Area
+	footerBoxStyle = lipgloss.NewStyle().
+			Padding(1, 2).
+			Border(lipgloss.NormalBorder(), true, false, false, false).
+			BorderForeground(slateSecondary)
+
+	inputStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(orangePrimary).
+			Padding(0, 1)
+
+	// Status & Indicators
 	statusStyle = lipgloss.NewStyle().
-			Foreground(shannonSlate).
+			Foreground(slateSecondary).
 			Italic(true)
-			
-	readyIndicatorStyle = lipgloss.NewStyle().
-			Foreground(shannonSlate).
+
+	toolCallStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#10B981")). // Green icon
+			Bold(true).
 			MarginLeft(2)
-			
+
+	toolNameStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#94A3B8")).
+			Italic(true)
+
 	errorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#EF4444")).
+			Bold(true).
+			Padding(0, 1)
+
+	// Shortcuts & Hints
+	shortcutStyle = lipgloss.NewStyle().
+			Foreground(slateSecondary).
+			MarginLeft(2)
+
+	commandHintStyle = lipgloss.NewStyle().
+			Foreground(orangeSecondary).
 			Bold(true)
-			
-	dividerStyle = lipgloss.NewStyle().
-			Foreground(shannonSlate).
-			Margin(1, 0)
-			
-	// Suggestion Box Styles
+
+	// Selection Box (Slash Commands)
 	suggestionBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(shannonSlate).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(slateSecondary).
+			Background(bgDeep).
 			Padding(0, 1).
-			Background(shannonDark).
-			Width(60)
+			Width(65)
 
 	selectedCommandStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#FFFFFF")).
+			Background(orangePrimary).
 			Foreground(lipgloss.Color("#000000")).
 			Bold(true).
 			Padding(0, 1)
 
 	unselectedCommandStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#94A3B8")).
+			Foreground(slateSecondary).
 			Padding(0, 1)
 
-	// Layout
-	headerStyle = lipgloss.NewStyle().
-			Foreground(shannonSlate).
-			Bold(true).
-			Padding(0, 1).
-			MarginBottom(1)
-			
-	helpStyle = lipgloss.NewStyle().
-			Foreground(shannonSlate).
-			MarginLeft(2)
-
-	shortcutHintStyle = lipgloss.NewStyle().
-			Foreground(shannonSlate).
-			MarginLeft(2).
-			MarginBottom(1)
+	dividerStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, true, false).
+			BorderForeground(slateSecondary).
+			Margin(0, 2)
 )

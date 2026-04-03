@@ -63,7 +63,7 @@ type Model struct {
 	showSuggestions bool
 	suggestions     []agent.SlashCommand
 	suggestionIdx   int
-	executingTool   string // Name of the tool currently running
+	executingTool   string
 }
 
 func NewModel(a *agent.Agent) Model {
@@ -72,12 +72,11 @@ func NewModel(a *agent.Agent) Model {
 	ta.Focus()
 	ta.Prompt = "┃ "
 	ta.CharLimit = 10000
-	ta.SetWidth(60)
 	ta.SetHeight(3)
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(shannonOrange)
+	s.Style = lipgloss.NewStyle().Foreground(orangePrimary)
 
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
@@ -93,14 +92,12 @@ func NewModel(a *agent.Agent) Model {
 		spinner:  s,
 		renderer: renderer,
 		state:    stateInput,
+		width:    80, // Default fallback
+		height:   24, // Default fallback
 	}
 }
 
 type initMsg struct{}
-type thinkingMsg bool
-type textDeltaMsg string
-type toolStartMsg struct{ Name string }
-type toolEndMsg struct{ Name string }
 type eventMsg types.AgentEvent
 type finishMsg string
 
@@ -118,6 +115,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		spCmd tea.Cmd
 	)
 
+	// Intercept keys if suggestions are showing
+	if m.showSuggestions {
+		if kmsg, ok := msg.(tea.KeyMsg); ok {
+			switch kmsg.Type {
+			case tea.KeyUp:
+				m.suggestionIdx--
+				if m.suggestionIdx < 0 {
+					m.suggestionIdx = len(m.suggestions) - 1
+				}
+				return m, nil
+			case tea.KeyDown:
+				m.suggestionIdx++
+				if m.suggestionIdx >= len(m.suggestions) {
+					m.suggestionIdx = 0
+				}
+				return m, nil
+			case tea.KeyEnter, tea.KeyTab:
+				selected := m.suggestions[m.suggestionIdx]
+				m.textarea.SetValue("/" + selected.Name() + " ")
+				m.showSuggestions = false
+				m.textarea.CursorEnd()
+				return m, nil
+			case tea.KeyEsc:
+				m.showSuggestions = false
+				return m, nil
+			}
+		}
+	}
+
 	// Message sending and interception
 	if kmsg, ok := msg.(tea.KeyMsg); ok {
 		switch kmsg.Type {
@@ -130,6 +156,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.state == stateInput && strings.TrimSpace(m.textarea.Value()) != "" {
 				userPrompt := strings.TrimSpace(m.textarea.Value())
+				// Handle slash commands locally if needed, but Agent.Run does it.
 				m.history = append(m.history, Message{Role: "user", Content: userPrompt})
 				m.textarea.Reset()
 				m.state = stateThinking
@@ -141,7 +168,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.runAgent(userPrompt),
 				)
 			}
-			return m, nil // Block Enter from adding newline
+			return m, nil // Block Enter from adding newline normally
 		case tea.KeyCtrlV:
 			raw, _ := clipboard.ReadAll()
 			m.textarea.SetValue(m.textarea.Value() + raw)
@@ -171,14 +198,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - m.textarea.Height() - 6
-		m.textarea.SetWidth(msg.Width)
-		m.updateViewport()
-		return m, nil
-
-	case textDeltaMsg:
-		m.currResponse += string(msg)
+		m.recalculateLayout()
 		m.updateViewport()
 		return m, nil
 
@@ -194,24 +214,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.executingTool = ""
 			m.currResponse = ""
 		}
-		m.updateViewport()
-		return m, nil
-
-	case toolStartMsg:
-		m.executingTool = msg.Name
-		m.updateViewport()
-		return m, nil
-
-	case toolEndMsg:
-		m.executingTool = ""
-		m.updateViewport()
-		return m, nil
-
-	case responseMsg:
-		m.history = append(m.history, Message{Role: "assistant", Content: string(msg)})
-		m.state = stateInput
-		m.currResponse = ""
-		m.executingTool = ""
 		m.updateViewport()
 		return m, nil
 
@@ -232,28 +234,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tiCmd, vpCmd, spCmd)
 }
 
+func (m *Model) recalculateLayout() {
+	footerHeight := lipgloss.Height(m.renderFooter())
+
+	m.viewport.Width = m.width
+	m.viewport.Height = m.height - footerHeight - 1
+	if m.viewport.Height < 1 {
+		m.viewport.Height = 1
+	}
+	m.textarea.SetWidth(m.width - 6) // Internal padding
+}
+
 func (m *Model) updateViewport() {
 	var sb strings.Builder
+
+	// Show the branding and session info at the very top of the scrollback
+	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
+
 	if len(m.history) == 0 {
-		sb.WriteString(m.renderIntro())
-	}
-	for _, msg := range m.history {
-		if msg.Role == "user" {
-			sb.WriteString(roleUserStyle.Render("USER"))
-			sb.WriteString("\n")
-		} else {
-			sb.WriteString(roleAssistantStyle.Render("SHANNON"))
+		sb.WriteString(m.renderWelcome())
+	} else {
+		for _, msg := range m.history {
+			sb.WriteString(m.renderMessage(msg))
 			sb.WriteString("\n")
 		}
-		rendered, _ := m.renderer.Render(msg.Content)
-		sb.WriteString(rendered)
-		sb.WriteString("\n")
 	}
+
 	if m.state == stateThinking {
 		sb.WriteString(roleAssistantStyle.Render("SHANNON"))
 		sb.WriteString("\n")
 		if m.executingTool != "" {
-			sb.WriteString(m.spinner.View() + statusStyle.Render(fmt.Sprintf(" Running %s...", m.executingTool)))
+			sb.WriteString(toolCallStyle.Render("⚙ RUNNING "))
+			sb.WriteString(toolNameStyle.Render(m.executingTool))
+			sb.WriteString(m.spinner.View())
 		} else if m.currResponse != "" {
 			rendered, _ := m.renderer.Render(m.currResponse)
 			sb.WriteString(rendered)
@@ -261,22 +275,78 @@ func (m *Model) updateViewport() {
 			sb.WriteString(m.spinner.View() + statusStyle.Render(" Thinking..."))
 		}
 	}
-	m.viewport.SetContent(sb.String())
-	m.viewport.GotoBottom()
+
+	m.viewport.SetContent(viewportStyle.Render(sb.String()))
+	if m.viewport.Height > 0 {
+		m.viewport.GotoBottom()
+	}
 }
 
-func (m Model) renderIntro() string {
-	res := bannerStyle.Render(banner) + "\n"
-	res += taglineStyle.Render(tagline) + "\n\n"
+func (m Model) renderMessage(msg Message) string {
+	var sb strings.Builder
+	if msg.Role == "user" {
+		// Add vertical space before each user message turn
+		sb.WriteString("\n")
+		sb.WriteString(roleUserStyle.Render("USER"))
+		sb.WriteString("\n")
+		sb.WriteString(lipgloss.NewStyle().PaddingLeft(2).PaddingBottom(1).Render(msg.Content))
+	} else {
+		sb.WriteString(roleAssistantStyle.Render("SHANNON"))
+		sb.WriteString("\n")
+		rendered, _ := m.renderer.Render(msg.Content)
+		sb.WriteString(rendered)
+		// Add space below assistant response
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+func (m Model) renderHeader() string {
+	bannerTxt := bannerStyle.Render(banner)
+	tag := taglineStyle.Render(tagline)
+
 	info := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Left, labelStyle.Render("Provider"), valueStyle.Render("OpenAI (Compatible)")),
 		lipgloss.JoinHorizontal(lipgloss.Left, labelStyle.Render("Model"), valueStyle.Render(config.OpenAIModel())),
 		lipgloss.JoinHorizontal(lipgloss.Left, labelStyle.Render("Endpoint"), valueStyle.Render(config.OpenAIBaseURL())),
 	)
-	res += infoBoxStyle.Render(info) + "\n"
-	res += readyIndicatorStyle.Render("● shannon Ready - type /help to begin") + "\n"
-	res += lipgloss.NewStyle().Foreground(shannonSlate).MarginLeft(2).Render("openshannon v0.1.0") + "\n"
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		bannerTxt,
+		tag,
+		infoBoxStyle.Render(info),
+	)
+}
+
+func (m Model) renderWelcome() string {
+	res := "\n"
+	res += lipgloss.NewStyle().
+		Foreground(orangeSecondary).
+		Bold(true).
+		MarginLeft(2).
+		Render("● shannon Ready - type /help to begin") + "\n"
+	res += lipgloss.NewStyle().
+		Foreground(slateSecondary).
+		MarginLeft(2).
+		Render("openshannon v0.1.0 (Go Native)") + "\n"
 	return res
+}
+
+func (m Model) renderFooter() string {
+	input := inputStyle.Width(m.width - 4).Render(m.textarea.View())
+
+	hints := lipgloss.JoinHorizontal(lipgloss.Top,
+		shortcutStyle.Render("Enter "), commandHintStyle.Render("send"),
+		shortcutStyle.Render(" / "), commandHintStyle.Render("commands"),
+		shortcutStyle.Render(" Alt+Enter "), commandHintStyle.Render("newline"),
+	)
+
+	return footerBoxStyle.Width(m.width).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			input,
+			hints,
+		),
+	)
 }
 
 func (m Model) renderSuggestions() string {
@@ -304,33 +374,26 @@ func (m Model) View() string {
 		return errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
 	}
 
-	var header string
-	if len(m.history) > 0 {
-		header = headerStyle.Render(" OpenShannon-Go 0.1.0 ") + helpStyle.Render(" (Enter send)")
-	}
-
+	viewport := m.viewport.View()
 	suggestions := m.renderSuggestions()
+	footer := m.renderFooter()
 
-	footer := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), true, false, false, false).
-		BorderForeground(shannonSlate).
-		Width(m.width).
-		Render(m.textarea.View())
-
-	shortcutHint := shortcutHintStyle.Render("/ for shortcuts")
-
-	// Suggestions appear above footer
-	content := m.viewport.View()
 	if suggestions != "" {
-		return fmt.Sprintf("%s%s\n%s\n%s\n%s", header, content, suggestions, footer, shortcutHint)
+		return lipgloss.JoinVertical(lipgloss.Left,
+			viewport,
+			suggestions,
+			footer,
+		)
 	}
 
-	return fmt.Sprintf("%s%s\n%s\n%s", header, content, footer, shortcutHint)
+	return lipgloss.JoinVertical(lipgloss.Left,
+		viewport,
+		footer,
+	)
 }
 
 func (m Model) runAgent(prompt string) tea.Cmd {
 	return func() tea.Msg {
-		// Use a channel to communicate events back to the UI
 		ch := make(chan types.AgentEvent)
 		errCh := make(chan error, 1)
 
@@ -346,7 +409,6 @@ func (m Model) runAgent(prompt string) tea.Cmd {
 			ch <- types.AgentEvent{Type: "FINISH", Text: output}
 		}()
 
-		// This cmd will return the first event
 		return m.waitForStream(ch, errCh)()
 	}
 }
@@ -363,7 +425,6 @@ func (m Model) waitForStream(ch chan types.AgentEvent, errCh chan error) tea.Cmd
 			if ev.Type == "FINISH" {
 				return finishMsg(ev.Text)
 			}
-			// Sequence next event read
 			return tea.Sequence(func() tea.Msg { return eventMsg(ev) }, m.waitForStream(ch, errCh))()
 		}
 	}
