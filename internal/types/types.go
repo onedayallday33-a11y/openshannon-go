@@ -2,6 +2,12 @@ package types
 
 import "github.com/onedayallday33-a11y/openshannon-go/internal/toolapi"
 
+// Usage represents token usage for a message
+type Usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
 // Role constants
 const (
 	RoleUser      = "user"
@@ -12,6 +18,7 @@ const (
 type Message struct {
 	Role    string         `json:"role"`
 	Content []ContentBlock `json:"content"`
+	Usage   *Usage         `json:"usage,omitempty"`
 }
 
 // ContentBlock represents a generic block of content (text, image, tool use/result)

@@ -16,6 +16,10 @@ func InitConfig() {
 	viper.SetDefault("OPENAI_MODEL", "gpt-4o")
 }
 
+func SaveConfig() error {
+	return viper.WriteConfig()
+}
+
 func UseOpenAI() bool {
 	val := viper.GetString("CLAUDE_CODE_USE_OPENAI")
 	return val == "1" || val == "true"

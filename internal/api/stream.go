@@ -66,16 +66,27 @@ func StreamEvents(resp *http.Response) (<-chan AnthropicStreamEvent, <-chan erro
 						Type:  "content_block_delta",
 						Index: choice.Index,
 						Delta: map[string]interface{}{
-							"type": "input_json_delta",
+							"type":         "input_json_delta",
 							"partial_json": tc.Function.Arguments,
 						},
 						// We also need to signal tool use start if ID or Name is present
 						ContentBlk: map[string]interface{}{
 							"type": "tool_use",
-							"id": tc.ID,
+							"id":   tc.ID,
 							"name": tc.Function.Name,
 						},
 					}
+				}
+			}
+
+			// Handle Usage
+			if chunk.Usage != nil {
+				events <- AnthropicStreamEvent{
+					Type: "message_delta",
+					Usage: map[string]int{
+						"input_tokens":  chunk.Usage.PromptTokens,
+						"output_tokens": chunk.Usage.CompletionTokens,
+					},
 				}
 			}
 		}

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/onedayallday33-a11y/openshannon-go/internal/history"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/toolapi"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/types"
 )
@@ -9,9 +10,10 @@ import (
 type Agent struct {
 	ID        string
 	Config    types.AgentConfig
-	History   []types.Message
-	Tools     map[string]toolapi.Tool
-	OnTurnEnd func(*Agent) // Hook for persistence or UI updates
+	History     []types.Message
+	Tools       map[string]toolapi.Tool
+	FileHistory *history.FileHistory
+	OnTurnEnd   func(*Agent) // Hook for persistence or UI updates
 }
 
 // NewAgent creates a new agent instance
@@ -22,10 +24,11 @@ func NewAgent(id string, config types.AgentConfig) *Agent {
 	}
 
 	return &Agent{
-		ID:      id,
-		Config:  config,
-		History: []types.Message{},
-		Tools:   toolMap,
+		ID:          id,
+		Config:      config,
+		History:     []types.Message{},
+		Tools:       toolMap,
+		FileHistory: history.NewFileHistory(id),
 	}
 }
 

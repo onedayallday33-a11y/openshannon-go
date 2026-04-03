@@ -79,6 +79,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		var currentText string
 		var currentTools = make(map[int]*types.ToolUse)
 		var currentToolJSON = make(map[int]string)
+		var usage *types.Usage
 		
 		loop:
 		for {
@@ -126,6 +127,13 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 							currentToolJSON[choiceIdx] += partialJSON
 						}
 					}
+				case "message_delta":
+					if event.Usage != nil {
+						usage = &types.Usage{
+							InputTokens:  event.Usage["input_tokens"],
+							OutputTokens: event.Usage["output_tokens"],
+						}
+					}
 				}
 			}
 		}
@@ -136,6 +144,9 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 				Type: "text",
 				Text: currentText,
 			})
+		}
+		if usage != nil {
+			assistantMessage.Usage = usage
 		}
 
 		// Parse accumulated JSON for tools
@@ -164,7 +175,16 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 				if onEvent != nil {
 					onEvent(types.AgentEvent{Type: types.EventToolStart, Tool: block.ToolUse})
 				}
-				
+
+				// Take snapshot before tool use (simplified)
+				// For now, let's track common files mentioned in input
+				if filePath, ok := block.ToolUse.Input["path"].(string); ok {
+					_ = a.FileHistory.TrackFile(filePath)
+				}
+				if filePath, ok := block.ToolUse.Input["filePath"].(string); ok {
+					_ = a.FileHistory.TrackFile(filePath)
+				}
+
 				res, err := a.HandleToolUse(ctx, block.ToolUse.ID, block.ToolUse.Name, block.ToolUse.Input)
 				if err != nil {
 					res = fmt.Sprintf("Error: %v", err)

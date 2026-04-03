@@ -34,6 +34,11 @@ func main() {
 	disp.Register(&commands.ClearCommand{})
 	disp.Register(&commands.ExitCommand{})
 	disp.Register(&commands.ModelCommand{})
+	disp.Register(&commands.DiffCommand{})
+	disp.Register(&commands.StatsCommand{})
+	disp.Register(&commands.RewindCommand{})
+	disp.Register(&commands.ConfigCommand{})
+	disp.Register(&commands.MCPCommand{})
 
 	// 2. Load Profile
 	pm := profile.NewProfileManager()
