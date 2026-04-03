@@ -7,9 +7,11 @@ import (
 	"net/http"
 )
 
+// var json is already declared in client.go
+
 // StreamEvents reads SSE from OpenAI and converts to Anthropic stream events on the fly
 func StreamEvents(resp *http.Response) (<-chan AnthropicStreamEvent, <-chan error) {
-	events := make(chan AnthropicStreamEvent)
+	events := make(chan AnthropicStreamEvent, 64) // Buffered channel for better throughput
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -18,6 +20,8 @@ func StreamEvents(resp *http.Response) (<-chan AnthropicStreamEvent, <-chan erro
 		defer close(errCh)
 
 		reader := bufio.NewReader(resp.Body)
+		dataPrefix := []byte("data: ")
+		doneMsg := []byte("[DONE]")
 		
 		for {
 			line, err := reader.ReadBytes('\n')
@@ -33,12 +37,12 @@ func StreamEvents(resp *http.Response) (<-chan AnthropicStreamEvent, <-chan erro
 				continue
 			}
 
-			if !bytes.HasPrefix(line, []byte("data: ")) {
+			if !bytes.HasPrefix(line, dataPrefix) {
 				continue
 			}
 
-			data := bytes.TrimPrefix(line, []byte("data: "))
-			if bytes.Equal(data, []byte("[DONE]")) {
+			data := bytes.TrimPrefix(line, dataPrefix)
+			if bytes.Equal(data, doneMsg) {
 				break
 			}
 

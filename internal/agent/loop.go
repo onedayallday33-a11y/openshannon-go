@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/onedayallday33-a11y/openshannon-go/internal/api"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/types"
@@ -43,14 +44,15 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 			onEvent(types.AgentEvent{Type: types.EventThinkingStart})
 		}
 
-		// 2. Prepare API Request
-		var anthropicTools []api.AnthropicTool
-		for _, t := range a.Config.Tools {
-			anthropicTools = append(anthropicTools, api.AnthropicTool{
-				Name:        t.Name(),
-				Description: t.Description(),
-				InputSchema: t.InputSchema(),
-			})
+		// 2. Prepare API Request (Cached)
+		if len(a.anthropicToolsCache) == 0 {
+			for _, t := range a.Config.Tools {
+				a.anthropicToolsCache = append(a.anthropicToolsCache, api.AnthropicTool{
+					Name:        t.Name(),
+					Description: t.Description(),
+					InputSchema: t.InputSchema(),
+				})
+			}
 		}
 
 		// 3. Call LLM (Streaming)
@@ -58,7 +60,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 			Model:    a.Config.Model,
 			System:   a.Config.System,
 			Messages: a.toAnthropicMessages(),
-			Tools:    anthropicTools,
+			Tools:    a.anthropicToolsCache,
 			Stream:   true,
 		}
 
@@ -76,9 +78,9 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		events, errCh := api.StreamEvents(resp)
 		
 		assistantMessage := types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{}}
-		var currentText string
+		var currentText strings.Builder
 		var currentTools = make(map[int]*types.ToolUse)
-		var currentToolJSON = make(map[int]string)
+		var currentToolJSON = make(map[int]*strings.Builder)
 		var usage *types.Usage
 		
 		loop:
@@ -102,16 +104,13 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 					
 					if deltaType == "text_delta" {
 						text, _ := event.Delta["text"].(string)
-						currentText += text
+						currentText.WriteString(text)
 						if onEvent != nil {
 							onEvent(types.AgentEvent{Type: types.EventTextDelta, Text: text})
 						}
 					} else if deltaType == "input_json_delta" {
-						// Note: OpenAI sends tool calls as choice deltas. 
-						// Our shim maps it to input_json_delta.
 						choiceIdx := event.Index
 						
-						// If tool_use metadata is present, it's the start
 						if cb := event.ContentBlk; cb != nil {
 							if cb["type"] == "tool_use" {
 								if _, exists := currentTools[choiceIdx]; !exists {
@@ -119,12 +118,15 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 										ID:   cb["id"].(string),
 										Name: cb["name"].(string),
 									}
+									currentToolJSON[choiceIdx] = &strings.Builder{}
 								}
 							}
 						}
 						
 						if partialJSON, ok := event.Delta["partial_json"].(string); ok {
-							currentToolJSON[choiceIdx] += partialJSON
+							if sb, ok := currentToolJSON[choiceIdx]; ok {
+								sb.WriteString(partialJSON)
+							}
 						}
 					}
 				case "message_delta":
@@ -139,10 +141,11 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		}
 
 		// 4. Finalize text and tool calls for this turn
-		if currentText != "" {
+		finalText := currentText.String()
+		if finalText != "" {
 			assistantMessage.Content = append(assistantMessage.Content, types.ContentBlock{
 				Type: "text",
-				Text: currentText,
+				Text: finalText,
 			})
 		}
 		if usage != nil {
@@ -152,8 +155,8 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		// Parse accumulated JSON for tools
 		for idx, tool := range currentTools {
 			var input map[string]interface{}
-			if jsonStr := currentToolJSON[idx]; jsonStr != "" {
-				json.Unmarshal([]byte(jsonStr), &input)
+			if sb, ok := currentToolJSON[idx]; ok {
+				json.Unmarshal([]byte(sb.String()), &input)
 			}
 			tool.Input = input
 			assistantMessage.Content = append(assistantMessage.Content, types.ContentBlock{
@@ -167,7 +170,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		// 5. Execute tools if any
 		hasToolUse := len(currentTools) > 0
 		if !hasToolUse {
-			return currentText, nil
+			return finalText, nil
 		}
 
 		for _, block := range assistantMessage.Content {
@@ -217,9 +220,13 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		return "", fmt.Errorf("reached max turns (%d) without final answer", a.Config.MaxTurns)
 	}
 
-	func (a *Agent) toAnthropicMessages() []api.AnthropicMessage {
+func (a *Agent) toAnthropicMessages() []api.AnthropicMessage {
+	if len(a.History) == 0 {
+		return nil
+	}
 	msgs := make([]api.AnthropicMessage, len(a.History))
-	for i, m := range a.History {
+	for i := range a.History {
+		m := &a.History[i]
 		msgs[i] = api.AnthropicMessage{
 			Role:    m.Role,
 			Content: m.Content,

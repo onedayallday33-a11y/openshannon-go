@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/onedayallday33-a11y/openshannon-go/internal/api"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/history"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/toolapi"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/types"
@@ -14,6 +15,9 @@ type Agent struct {
 	Tools       map[string]toolapi.Tool
 	FileHistory *history.FileHistory
 	OnTurnEnd   func(*Agent) // Hook for persistence or UI updates
+	
+	// Cache
+	anthropicToolsCache []api.AnthropicTool
 }
 
 // NewAgent creates a new agent instance

@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/onedayallday33-a11y/openshannon-go/internal/utils/permissions"
 )
@@ -79,7 +81,14 @@ type grepMatchLine struct {
 	context bool // true if it's a context line, false if it's a match
 }
 
-// Execute the grep logic
+type grepFileResult struct {
+	path        string
+	matchInFile bool
+	matches     []grepMatchLine
+	numMatches  int
+}
+
+// Execute the grep logic (Parallel implementation)
 func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) (interface{}, error) {
 	patternStr, _ := args["pattern"].(string)
 	searchPath := "."
@@ -132,18 +141,71 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) (in
 	}
 
 	cwd, _ := os.Getwd()
+
+	// Parallel logic
+	numWorkers := runtime.NumCPU()
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+
+	pathsChan := make(chan string, 128)
+	resultsChan := make(chan grepFileResult, 128)
+	var wg sync.WaitGroup
+	var stopFlag int32
+
+	// Workers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range pathsChan {
+				if atomic.LoadInt32(&stopFlag) == 1 {
+					continue
+				}
+
+				res := t.searchInFile(path, cwd, re, outputMode, before, after)
+				resultsChan <- res
+			}
+		}()
+	}
+
+	// Result Collector
+	var matchFiles []string
+	var results []string
+	var totalMatches int64
 	
-	results := []string{}
-	matchFiles := []string{}
-	totalMatches := 0
-	
+	doneChan := make(chan bool)
+	go func() {
+		for res := range resultsChan {
+			if res.matchInFile {
+				matchFiles = append(matchFiles, res.path)
+				atomic.AddInt64(&totalMatches, int64(res.numMatches))
+				
+				if outputMode == "content" {
+					for _, m := range res.matches {
+						marker := ":"
+						if m.context {
+							marker = "-"
+						}
+						results = append(results, fmt.Sprintf("%s%s%d%s%s", res.path, marker, m.lineNum, marker, m.content))
+					}
+				}
+
+				// Check head limit
+				if atomic.LoadInt64(&totalMatches) >= int64(DefaultGrepHeadLimit) && outputMode != "count" {
+					atomic.StoreInt32(&stopFlag, 1)
+				}
+			}
+		}
+		doneChan <- true
+	}()
+
 	// Traversal
 	err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // Skip files with errors
+		if err != nil || atomic.LoadInt32(&stopFlag) == 1 {
+			return nil
 		}
 		if d.IsDir() {
-			// Skip dangerous directories (logic handled in IsReadAllowed, but good to prune early)
 			allowed, _ := permissions.IsReadAllowed(path, cwd)
 			if !allowed {
 				return fs.SkipDir
@@ -151,105 +213,28 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) (in
 			return nil
 		}
 
-		// Security Check
 		allowed, _ := permissions.IsReadAllowed(path, cwd)
 		if !allowed {
 			return nil
 		}
 
-		// File Size Check (1MB Skip)
 		info, err := d.Info()
 		if err == nil && info.Size() > DefaultMaxFileSize {
 			return nil
 		}
 
-		// Open and scan
-		f, err := os.Open(path)
-		if err != nil {
-			return nil
-		}
-		defer f.Close()
-
-		relPath, _ := filepath.Rel(cwd, path)
-		
-		scanner := bufio.NewScanner(f)
-		lineNum := 0
-		
-		var fileMatches []grepMatchLine
-		var history []string // Circular buffer for context before
-		
-		matchInFile := false
-		linesToCapture := 0 // Tracks how many lines after a match to capture
-
-		for scanner.Scan() {
-			lineNum++
-			lineContent := scanner.Text()
-			
-			if re.MatchString(lineContent) {
-				matchInFile = true
-				totalMatches++
-				
-				// Capture context before if needed
-				if outputMode == "content" && before > 0 {
-					startLine := lineNum - len(history)
-					for i, h := range history {
-						fileMatches = append(fileMatches, grepMatchLine{startLine + i, h, true})
-					}
-				}
-				history = nil // Clear history after match
-				
-				// Capture current match
-				if outputMode == "content" {
-					fileMatches = append(fileMatches, grepMatchLine{lineNum, lineContent, false})
-				}
-				
-				// Reset after counter
-				linesToCapture = after
-			} else {
-				if outputMode == "content" {
-					if linesToCapture > 0 {
-						fileMatches = append(fileMatches, grepMatchLine{lineNum, lineContent, true})
-						linesToCapture--
-					} else if before > 0 {
-						// Keep history for next potential match
-						history = append(history, lineContent)
-						if len(history) > before {
-							history = history[1:] // Shift
-						}
-					}
-				}
-			}
-			
-			// Stop if reached excessive matches (head_limit)
-			if totalMatches >= DefaultGrepHeadLimit && outputMode != "count" {
-				break
-			}
-		}
-
-		if matchInFile {
-			matchFiles = append(matchFiles, relPath)
-			if outputMode == "content" {
-				for _, m := range fileMatches {
-					marker := ":"
-					if m.context {
-						marker = "-"
-					}
-					results = append(results, fmt.Sprintf("%s%s%d%s%s", relPath, marker, m.lineNum, marker, m.content))
-				}
-			} else if outputMode == "count" {
-				// Count is handled via totalMatches and matchFiles.length
-			}
-		}
-
-		if totalMatches >= DefaultGrepHeadLimit && outputMode != "count" {
-			return io.EOF // Special return to stop recursion
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case pathsChan <- path:
 		}
 		return nil
 	})
 
-	if err != nil && err.Error() != "EOF" {
-		// Note: WalkDir returns EOF if I returned it
-	}
+	close(pathsChan)
+	wg.Wait()
+	close(resultsChan)
+	<-doneChan
 
 	result := map[string]interface{}{
 		"filenames": matchFiles,
@@ -259,8 +244,71 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) (in
 	if outputMode == "content" {
 		result["content"] = strings.Join(results, "\n")
 	} else if outputMode == "count" {
-		result["numMatches"] = totalMatches
+		result["numMatches"] = int(totalMatches)
 	}
 
 	return result, nil
+}
+
+func (t *GrepTool) searchInFile(path, cwd string, re *regexp.Regexp, outputMode string, before, after int) grepFileResult {
+	f, err := os.Open(path)
+	if err != nil {
+		return grepFileResult{}
+	}
+	defer f.Close()
+
+	relPath, _ := filepath.Rel(cwd, path)
+	scanner := bufio.NewScanner(f)
+	
+	var fileMatches []grepMatchLine
+	var history []string
+	matchInFile := false
+	numMatches := 0
+	lineNum := 0
+	linesToCapture := 0
+
+	for scanner.Scan() {
+		lineNum++
+		lineContent := scanner.Text()
+		
+		if re.MatchString(lineContent) {
+			matchInFile = true
+			numMatches++
+			
+			if outputMode == "content" && before > 0 {
+				startLine := lineNum - len(history)
+				for i, h := range history {
+					fileMatches = append(fileMatches, grepMatchLine{startLine + i, h, true})
+				}
+			}
+			history = nil
+			
+			if outputMode == "content" {
+				fileMatches = append(fileMatches, grepMatchLine{lineNum, lineContent, false})
+			}
+			linesToCapture = after
+		} else {
+			if outputMode == "content" {
+				if linesToCapture > 0 {
+					fileMatches = append(fileMatches, grepMatchLine{lineNum, lineContent, true})
+					linesToCapture--
+				} else if before > 0 {
+					history = append(history, lineContent)
+					if len(history) > before {
+						history = history[1:]
+					}
+				}
+			}
+		}
+
+		// Note: We don't check global head limit here to avoid too much atomic activity,
+		// but the worker loop checks stopFlag.
+	}
+
+	return grepFileResult{
+		path:        relPath,
+		matchInFile: matchInFile,
+		matches:     fileMatches,
+		numMatches:  numMatches,
+	}
 }

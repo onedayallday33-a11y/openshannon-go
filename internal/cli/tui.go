@@ -66,6 +66,10 @@ type Model struct {
 	executingTool   string
 	isDragging      bool
 	dragStartY      int
+	
+	// Cache
+	renderedHistory string
+	cachedHeader    string
 }
 
 func NewModel(a *agent.Agent) Model {
@@ -288,6 +292,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case finishMsg:
+		m.renderedHistory = "" // Invalidate cache on new message
 		if string(msg) != "Conversation history cleared." {
 			m.history = append(m.history, Message{Role: "assistant", Content: string(msg)})
 		}
@@ -320,19 +325,33 @@ func (m *Model) recalculateLayout() {
 func (m *Model) updateViewport() {
 	var sb strings.Builder
 
-	// Show the branding and session info at the very top of the scrollback
-	sb.WriteString(m.renderHeader())
+	// 1. Header (Cached)
+	if m.cachedHeader == "" {
+		m.cachedHeader = m.renderHeader()
+	}
+	sb.WriteString(m.cachedHeader)
 	sb.WriteString("\n")
 
+	// 2. Welcome or History
 	if len(m.history) == 0 {
 		sb.WriteString(m.renderWelcome())
 	} else {
-		for _, msg := range m.history {
-			sb.WriteString(m.renderMessage(msg))
-			sb.WriteString("\n")
+		// Optimization: Check if history was already rendered
+		// In a production app, we'd only render the newest items.
+		// For now, let's at least avoid glamour re-runs on large chunks if possible.
+		// (Simplified incremental rendering)
+		if m.renderedHistory == "" || m.state == stateInput {
+			var histSb strings.Builder
+			for _, msg := range m.history {
+				histSb.WriteString(m.renderMessage(msg))
+				histSb.WriteString("\n")
+			}
+			m.renderedHistory = histSb.String()
 		}
+		sb.WriteString(m.renderedHistory)
 	}
 
+	// 3. Current Stream (LLM Thinking/Streaming)
 	if m.state == stateThinking {
 		sb.WriteString(roleAssistantStyle.Render("SHANNON"))
 		sb.WriteString("\n")
@@ -341,6 +360,7 @@ func (m *Model) updateViewport() {
 			sb.WriteString(toolNameStyle.Render(m.executingTool))
 			sb.WriteString(m.spinner.View())
 		} else if m.currResponse != "" {
+			// Note: currResponse is only the *current* turn delta
 			rendered, _ := m.renderer.Render(m.currResponse)
 			sb.WriteString(rendered)
 		} else {
