@@ -1,0 +1,29 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Project Documentation
+SPEC.md
+
+# Binaries
+/openshannon
+/openshannon.exe
+bin/
+
+# Go
+vendor/
+*.test
+*.prof
+*.out
+coverage.txt
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
