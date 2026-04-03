@@ -64,6 +64,8 @@ type Model struct {
 	suggestions     []agent.SlashCommand
 	suggestionIdx   int
 	executingTool   string
+	isDragging      bool
+	dragStartY      int
 }
 
 func NewModel(a *agent.Agent) Model {
@@ -72,7 +74,7 @@ func NewModel(a *agent.Agent) Model {
 	ta.Focus()
 	ta.Prompt = "┃ "
 	ta.CharLimit = 10000
-	ta.SetHeight(3)
+	ta.SetHeight(1)
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -156,8 +158,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.state == stateInput && strings.TrimSpace(m.textarea.Value()) != "" {
 				userPrompt := strings.TrimSpace(m.textarea.Value())
-				// Handle slash commands locally if needed, but Agent.Run does it.
-				m.history = append(m.history, Message{Role: "user", Content: userPrompt})
+				if userPrompt == "/clear" {
+					m.history = nil
+				} else {
+					m.history = append(m.history, Message{Role: "user", Content: userPrompt})
+				}
 				m.textarea.Reset()
 				m.state = stateThinking
 				m.currResponse = ""
@@ -168,25 +173,90 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.runAgent(userPrompt),
 				)
 			}
-			return m, nil // Block Enter from adding newline normally
+			return m, nil
+		case tea.KeyCtrlJ: // Newline shortcut (often Ctrl+Enter in terminals)
+			m.textarea.InsertString("\n")
+			return m, nil
 		case tea.KeyCtrlV:
 			raw, _ := clipboard.ReadAll()
 			m.textarea.SetValue(m.textarea.Value() + raw)
 			return m, nil
+		case tea.KeyCtrlK:
+			// Copy last assistant response
+			for i := len(m.history) - 1; i >= 0; i-- {
+				if m.history[i].Role == "assistant" {
+					_ = clipboard.WriteAll(m.history[i].Content)
+					break
+				}
+			}
+			return m, nil
 		}
 
-		// Trigger suggestions
+		// Trigger suggestions dynamically
 		val := m.textarea.Value()
-		if val == "/" {
-			m.showSuggestions = true
-			m.suggestions = agent.GetDispatcher().GetRegisteredCommands()
-			m.suggestionIdx = 0
-		} else if !strings.HasPrefix(val, "/") {
+		if strings.HasPrefix(val, "/") && !strings.Contains(val, " ") {
+			prefix := val[1:]
+			allCmds := agent.GetDispatcher().GetRegisteredCommands()
+			var filtered []agent.SlashCommand
+			for _, cmd := range allCmds {
+				if strings.HasPrefix(cmd.Name(), prefix) {
+					filtered = append(filtered, cmd)
+				}
+			}
+
+			if len(filtered) > 0 {
+				m.suggestions = filtered
+				m.showSuggestions = true
+				if m.suggestionIdx >= len(filtered) {
+					m.suggestionIdx = 0
+				}
+			} else {
+				m.showSuggestions = false
+			}
+		} else {
 			m.showSuggestions = false
 		}
 	}
 
+	// Handle Mouse Events for Scrollbar Dragging
+	if mmsg, ok := msg.(tea.MouseMsg); ok {
+		if mmsg.Type == tea.MouseLeft {
+			if mmsg.Action == tea.MouseActionPress && mmsg.X >= m.viewport.Width && mmsg.Y < m.viewport.Height {
+				m.isDragging = true
+				return m, nil
+			}
+			if mmsg.Action == tea.MouseActionRelease {
+				m.isDragging = false
+			}
+		}
+
+		if m.isDragging && mmsg.Action == tea.MouseActionMotion {
+			if m.viewport.TotalLineCount() > m.viewport.Height {
+				percent := float64(mmsg.Y) / float64(m.viewport.Height)
+				targetY := int(percent * float64(m.viewport.TotalLineCount()))
+				m.viewport.SetYOffset(targetY)
+				return m, nil
+			}
+		}
+	}
+
+	oldHeight := m.textarea.Height()
 	m.textarea, tiCmd = m.textarea.Update(msg)
+
+	// Dynamic height adjustment (min 1, max 5)
+	newHeight := m.textarea.LineCount()
+	if newHeight < 1 {
+		newHeight = 1
+	}
+	if newHeight > 5 {
+		newHeight = 5
+	}
+
+	if newHeight != oldHeight {
+		m.textarea.SetHeight(newHeight)
+		m.recalculateLayout()
+	}
+
 	m.viewport, vpCmd = m.viewport.Update(msg)
 	m.spinner, spCmd = m.spinner.Update(msg)
 
@@ -218,7 +288,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case finishMsg:
-		m.history = append(m.history, Message{Role: "assistant", Content: string(msg)})
+		if string(msg) != "Conversation history cleared." {
+			m.history = append(m.history, Message{Role: "assistant", Content: string(msg)})
+		}
 		m.state = stateInput
 		m.currResponse = ""
 		m.executingTool = ""
@@ -237,7 +309,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) recalculateLayout() {
 	footerHeight := lipgloss.Height(m.renderFooter())
 
-	m.viewport.Width = m.width
+	m.viewport.Width = m.width - 2 // Leave space for scrollbar and padding
 	m.viewport.Height = m.height - footerHeight - 1
 	if m.viewport.Height < 1 {
 		m.viewport.Height = 1
@@ -338,7 +410,8 @@ func (m Model) renderFooter() string {
 	hints := lipgloss.JoinHorizontal(lipgloss.Top,
 		shortcutStyle.Render("Enter "), commandHintStyle.Render("send"),
 		shortcutStyle.Render(" / "), commandHintStyle.Render("commands"),
-		shortcutStyle.Render(" Alt+Enter "), commandHintStyle.Render("newline"),
+		shortcutStyle.Render(" Ctrl+J "), commandHintStyle.Render("newline"),
+		shortcutStyle.Render(" Ctrl+K "), commandHintStyle.Render("copy last"),
 	)
 
 	return footerBoxStyle.Width(m.width).Render(
@@ -369,25 +442,71 @@ func (m Model) renderSuggestions() string {
 	return suggestionBoxStyle.Render(sb.String())
 }
 
+func (m Model) renderScrollbar() string {
+	if m.viewport.TotalLineCount() <= m.viewport.Height {
+		return ""
+	}
+
+	trackHeight := m.viewport.Height
+	if trackHeight <= 0 {
+		return ""
+	}
+
+	// Calculate thumb height and position
+	totalContentHeight := m.viewport.TotalLineCount()
+	visibleHeight := m.viewport.Height
+	scrollOffset := m.viewport.YOffset
+
+	thumbHeight := int(float64(visibleHeight) * float64(visibleHeight) / float64(totalContentHeight))
+	if thumbHeight < 1 {
+		thumbHeight = 1
+	}
+
+	maxScroll := totalContentHeight - visibleHeight
+	thumbOffset := 0
+	if maxScroll > 0 {
+		thumbOffset = int(float64(scrollOffset) * float64(visibleHeight-thumbHeight) / float64(maxScroll))
+	}
+
+	var sb strings.Builder
+	for i := 0; i < trackHeight; i++ {
+		if i >= thumbOffset && i < thumbOffset+thumbHeight {
+			sb.WriteString(scrollbarStyle.Render("█"))
+		} else {
+			sb.WriteString(scrollbarTrackStyle.Render("│"))
+		}
+		if i < trackHeight-1 {
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
 func (m Model) View() string {
 	if m.err != nil {
 		return errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
 	}
 
 	viewport := m.viewport.View()
+	scrollbar := m.renderScrollbar()
 	suggestions := m.renderSuggestions()
 	footer := m.renderFooter()
 
+	content := viewport
+	if scrollbar != "" {
+		content = lipgloss.JoinHorizontal(lipgloss.Top, viewport, scrollbar)
+	}
+
 	if suggestions != "" {
 		return lipgloss.JoinVertical(lipgloss.Left,
-			viewport,
+			content,
 			suggestions,
 			footer,
 		)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		viewport,
+		content,
 		footer,
 	)
 }

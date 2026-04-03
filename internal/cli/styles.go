@@ -119,4 +119,11 @@ var (
 			Border(lipgloss.NormalBorder(), false, false, true, false).
 			BorderForeground(slateSecondary).
 			Margin(0, 2)
+
+	// Scrollbar Styles
+	scrollbarStyle = lipgloss.NewStyle().
+			Foreground(orangeSecondary)
+
+	scrollbarTrackStyle = lipgloss.NewStyle().
+			Foreground(slateSecondary)
 )

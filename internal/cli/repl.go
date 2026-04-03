@@ -26,7 +26,7 @@ func NewREPL(a *agent.Agent) *REPL {
 
 // LaunchTUI starts the Bubble Tea based UI
 func (r *REPL) LaunchTUI() error {
-	p := tea.NewProgram(NewModel(r.Agent), tea.WithAltScreen())
+	p := tea.NewProgram(NewModel(r.Agent), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
