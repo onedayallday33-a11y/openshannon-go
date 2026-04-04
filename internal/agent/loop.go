@@ -69,12 +69,14 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 			return "", err
 		}
 
+		// 4. Handle non-200 status codes (Must check before starting stream)
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			return "", fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
 		}
 
+		// 5. Start streaming events (Ownership of resp.Body moves to StreamEvents)
 		events, errCh := api.StreamEvents(resp)
 		
 		assistantMessage := types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{}}
