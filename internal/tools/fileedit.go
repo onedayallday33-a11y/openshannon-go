@@ -94,8 +94,17 @@ func (t *FileEditTool) Execute(ctx context.Context, args map[string]interface{})
 			return nil, fmt.Errorf("edit at index %d is invalid", i)
 		}
 
-		oldStr := normalizeLineEndings(e["old_string"].(string))
-		newStr := normalizeLineEndings(e["new_string"].(string))
+		oldStrRaw, ok := e["old_string"].(string)
+		if !ok {
+			return nil, fmt.Errorf("edit at index %d: 'old_string' must be a string", i)
+		}
+		newStrRaw, ok := e["new_string"].(string)
+		if !ok {
+			return nil, fmt.Errorf("edit at index %d: 'new_string' must be a string", i)
+		}
+
+		oldStr := normalizeLineEndings(oldStrRaw)
+		newStr := normalizeLineEndings(newStrRaw)
 		replaceAll, _ := e["replace_all"].(bool)
 
 		if !strings.Contains(updatedContent, oldStr) {

@@ -72,6 +72,9 @@ func ConvertRequest(req *AnthropicMessageRequest) *OpenAIChatRequest {
 							content = currentBlocks[0].(map[string]interface{})["text"]
 						} else if len(currentBlocks) > 0 {
 							content = currentBlocks
+						} else {
+							// If we have tool calls but no text, some APIs require empty string content
+							content = ""
 						}
 						
 						openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage{
@@ -99,6 +102,8 @@ func ConvertRequest(req *AnthropicMessageRequest) *OpenAIChatRequest {
 					content = currentBlocks[0].(map[string]interface{})["text"]
 				} else if len(currentBlocks) > 0 {
 					content = currentBlocks
+				} else {
+					content = ""
 				}
 
 				openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage{

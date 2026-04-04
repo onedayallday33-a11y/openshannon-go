@@ -9,6 +9,7 @@ import (
 	"github.com/onedayallday33-a11y/openshannon-go/internal/cli"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/commands"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/config"
+	"github.com/onedayallday33-a11y/openshannon-go/internal/lsp"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/memory"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/profile"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/toolapi"
@@ -24,6 +25,7 @@ func main() {
 
 	// 0. Initialize Config
 	config.InitConfig()
+	defer lsp.GetLspManager("").Close()
 
 	// 1. Initialize Registry & Commands
 	disp := agent.GetDispatcher()
