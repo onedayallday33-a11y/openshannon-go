@@ -76,6 +76,20 @@ func IsCommandSafe(command string, cwd string) (bool, string) {
 		return false, "Command contains suspicious Windows path patterns (NTFS streams or shortnames)"
 	}
 
+	// 4. Detect forbidden files/directories in the command string
+	for _, file := range DangerousFiles {
+		if strings.Contains(lowerCmd, file) {
+			return false, fmt.Sprintf("Command mentions restricted file: %s", file)
+		}
+	}
+	for _, dir := range DangerousDirectories {
+		// Boundary check to avoid false positives (e.g., "my.git.repo")
+		if strings.Contains(lowerCmd, dir+"/") || strings.Contains(lowerCmd, dir+"\\") || 
+		   strings.HasSuffix(lowerCmd, dir) || strings.Contains(lowerCmd, " "+dir) {
+			return false, fmt.Sprintf("Command mentions restricted directory: %s", dir)
+		}
+	}
+
 	return true, ""
 }
 
