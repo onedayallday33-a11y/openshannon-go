@@ -562,7 +562,7 @@ func (m Model) runAgent(ctx context.Context, prompt string) tea.Cmd {
 				m.errChan <- err
 				return
 			}
-			m.eventChan <- types.AgentEvent{Type: "FINISH", Text: output}
+			m.eventChan <- types.AgentEvent{Type: types.EventFinish, Text: output}
 		}()
 
 		return m.waitForStream(m.eventChan, m.errChan)()
@@ -578,7 +578,7 @@ func (m Model) waitForStream(ch chan types.AgentEvent, errCh chan error) tea.Cmd
 			if !ok {
 				return eventMsg{Type: "IDLE"}
 			}
-			if ev.Type == "FINISH" {
+			if ev.Type == types.EventFinish {
 				return finishMsg(ev.Text)
 			}
 			return eventMsg(ev)

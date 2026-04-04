@@ -111,19 +111,20 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) (in
 		done <- true
 	}()
 
-	// Wait for command completion or timeout
-	err = cmd.Wait()
-	
-	// Close stdout to ensure the reader goroutine exits
-	stdout.Close()
-
-	// Wait for reader with a short timeout to be safe
+	// Wait for reader completion before Wait()
+	// This ensures we get all output and avoid race conditions or closing pipes early
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
-		fmt.Println("Warning: bash reader goroutine timed out")
+	case <-execCtx.Done():
+		// On timeout, the reader might still be blocked. 
+		// Closing stdout will force the reader to exit.
+		stdout.Close()
+		<-done // Wait for reader to acknowledge exit
 	}
 
+	// Wait for command completion
+	err = cmd.Wait()
+	
 	interrupted := false
 	if execCtx.Err() == context.DeadlineExceeded {
 		interrupted = true
@@ -132,7 +133,7 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) (in
 
 	result := map[string]interface{}{
 		"stdout":      output.String(),
-		"stderr":      "", // Combined in stdout for now
+		"stderr":      "", // Combined in stdout
 		"interrupted": interrupted,
 		"exit_code":   0,
 	}

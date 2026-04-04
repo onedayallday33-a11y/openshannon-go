@@ -158,13 +158,31 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) (in
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for path := range pathsChan {
-				if atomic.LoadInt32(&stopFlag) == 1 {
-					continue
-				}
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case path, ok := <-pathsChan:
+					if !ok {
+						return
+					}
+					if atomic.LoadInt32(&stopFlag) == 1 {
+						continue
+					}
 
-				res := t.searchInFile(path, cwd, re, outputMode, before, after)
-				resultsChan <- res
+					res := t.searchInFile(path, cwd, re, outputMode, before, after)
+					
+					// Re-check stopFlag before sending to avoid blocking on collection
+					if atomic.LoadInt32(&stopFlag) == 1 && outputMode != "count" {
+						continue
+					}
+
+					select {
+					case <-ctx.Done():
+						return
+					case resultsChan <- res:
+					}
+				}
 			}
 		}()
 	}
@@ -202,9 +220,15 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]interface{}) (in
 
 	// Traversal
 	err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || atomic.LoadInt32(&stopFlag) == 1 {
+		if err != nil {
 			return nil
 		}
+		
+		// Periodic check for stopFlag to abort traversal early
+		if atomic.LoadInt32(&stopFlag) == 1 && outputMode != "count" {
+			return filepath.SkipDir // Or just return nil, but SkipDir might be faster if we were in a deep tree
+		}
+
 		if d.IsDir() {
 			allowed, _ := permissions.IsReadAllowed(path, cwd)
 			if !allowed {

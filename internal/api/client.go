@@ -4,6 +4,7 @@ import (
     "bytes"
     "context"
     "fmt"
+    "io"
     "net/http"
 
     "github.com/onedayallday33-a11y/openshannon-go/internal/config"
@@ -59,8 +60,9 @@ func (c *Client) DoRequest(ctx context.Context, req *AnthropicMessageRequest) (*
     }
 
     if resp.StatusCode != http.StatusOK {
-        fmt.Printf("[DEBUG] Calling URL: %s\n", url)
-        fmt.Printf("[DEBUG] Requested Model: %s\n", openaiReq.Model)
+        body, _ := io.ReadAll(resp.Body)
+        resp.Body.Close()
+        return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
     }
 
     return resp, nil

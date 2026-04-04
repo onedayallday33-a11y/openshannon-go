@@ -66,20 +66,24 @@ func StreamEvents(resp *http.Response) (<-chan AnthropicStreamEvent, <-chan erro
 
 				// Handle Tool Call deltas
 				for _, tc := range choice.Delta.ToolCalls {
-					events <- AnthropicStreamEvent{
+					event := AnthropicStreamEvent{
 						Type:  "content_block_delta",
-						Index: choice.Index,
+						Index: tc.Index, // Use the tool call index, not choice index
 						Delta: map[string]interface{}{
 							"type":         "input_json_delta",
 							"partial_json": tc.Function.Arguments,
 						},
-						// We also need to signal tool use start if ID or Name is present
-						ContentBlk: map[string]interface{}{
+					}
+
+					// Only include ContentBlk (id/name) if they are present in this chunk
+					if tc.ID != "" || tc.Function.Name != "" {
+						event.ContentBlk = map[string]interface{}{
 							"type": "tool_use",
 							"id":   tc.ID,
 							"name": tc.Function.Name,
-						},
+						}
 					}
+					events <- event
 				}
 			}
 

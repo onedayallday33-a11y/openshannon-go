@@ -45,12 +45,18 @@ func IsCommandSafe(command string, cwd string) (bool, string) {
 		for _, dc := range DangerousCommands {
 			if base == dc {
 				// Special check: rm -rf / or similar broad deletes
-				if base == "rm" && (strings.Contains(lowerCmd, "/") || strings.Contains(lowerCmd, "*")) {
+				if base == "rm" {
 					// Disallow deletions of root, parent directories, or broad wildcard deletes
 					// Regex to catch: rm -rf /, rm -rf /*, rm -rf ./*, rm -rf ../, rm -rf/, etc.
 					// But allow targeted ones like: rm -rf ./node_modules, rm -rf data/
-					dangerousPattern := regexp.MustCompile(`\s+(\/|\*|\.\/\*|\.\.\/|\.\/(\s|$))|-[a-z]*[\/\*]`)
-					if dangerousPattern.MatchString(lowerCmd) || strings.HasSuffix(lowerCmd, " /") || strings.HasSuffix(lowerCmd, " *") {
+					// Pattern: matches a space followed by:
+					// 1. / (root) or /* (all in root)
+					// 2. * (all in current)
+					// 3. ./* (all in current)
+					// 4. ../ (parent)
+					// 5. ./ (current directory itself)
+					dangerousPattern := regexp.MustCompile(`\s+(\/(\s|\*|$)|(\.\/)?\*|\.\.\/|\.\/(\s|$))`)
+					if dangerousPattern.MatchString(lowerCmd) {
 						return false, fmt.Sprintf("Command '%s' with broad arguments is restricted for security reasons", base)
 					}
 				}
@@ -139,9 +145,17 @@ func IsWriteAllowed(path string, cwd string) (bool, string) {
 	}
 
 	// Restriction: Must be inside CWD
+	// Restriction: Must be inside CWD
 	normPath := filepath.ToSlash(strings.ToLower(absPath))
 	normCwd := filepath.ToSlash(strings.ToLower(absCwd))
-	if !strings.HasPrefix(normPath, normCwd) {
+	
+	// Ensure normCwd ends with a slash for prefix matching unless it's the exact same directory
+	cwdWithSlash := normCwd
+	if !strings.HasSuffix(cwdWithSlash, "/") {
+		cwdWithSlash += "/"
+	}
+
+	if !strings.HasPrefix(normPath, cwdWithSlash) && normPath != normCwd {
 		return false, "Writing outside current project directory is restricted"
 	}
 

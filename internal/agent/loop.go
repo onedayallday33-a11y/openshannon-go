@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 
 	"github.com/onedayallday33-a11y/openshannon-go/internal/api"
@@ -69,14 +67,7 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 			return "", err
 		}
 
-		// 4. Handle non-200 status codes (Must check before starting stream)
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return "", fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
-		}
-
-		// 5. Start streaming events (Ownership of resp.Body moves to StreamEvents)
+		// 4. Start streaming events (Ownership of resp.Body moves to StreamEvents)
 		events, errCh := api.StreamEvents(resp)
 		
 		assistantMessage := types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{}}
@@ -90,9 +81,9 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
-			case err := <-errCh:
-				if err != nil {
-					return "", err
+			case e := <-errCh:
+				if e != nil {
+					return "", e
 				}
 				break loop
 			case event, ok := <-events:

@@ -84,6 +84,7 @@ const (
 	EventToolStart     AgentEventType = "tool_start"
 	EventToolEnd       AgentEventType = "tool_end"
 	EventThinkingStart AgentEventType = "thinking_start"
+	EventFinish        AgentEventType = "finish"
 )
 
 // AgentEvent is used for real-time progress reporting

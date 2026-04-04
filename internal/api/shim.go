@@ -72,8 +72,10 @@ func ConvertRequest(req *AnthropicMessageRequest) *OpenAIChatRequest {
 							content = currentBlocks[0].(map[string]interface{})["text"]
 						} else if len(currentBlocks) > 0 {
 							content = currentBlocks
+						} else if m.Role == "assistant" && len(toolCalls) > 0 {
+							// For Assistant role, if we have tool calls, content can be null or empty
+							content = ""
 						} else {
-							// If we have tool calls but no text, some APIs require empty string content
 							content = ""
 						}
 						
@@ -102,6 +104,8 @@ func ConvertRequest(req *AnthropicMessageRequest) *OpenAIChatRequest {
 					content = currentBlocks[0].(map[string]interface{})["text"]
 				} else if len(currentBlocks) > 0 {
 					content = currentBlocks
+				} else if m.Role == "assistant" && len(toolCalls) > 0 {
+					content = ""
 				} else {
 					content = ""
 				}

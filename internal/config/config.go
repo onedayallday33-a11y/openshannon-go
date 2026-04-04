@@ -3,17 +3,22 @@ package config
 import (
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/viper"
 )
 
-func InitConfig() {
-	viper.SetEnvPrefix("")
-	viper.AutomaticEnv() // Bind directly to OS Env
+var once sync.Once
 
-	// Fallback Default Value
-	viper.SetDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
-	viper.SetDefault("OPENAI_MODEL", "gpt-4o")
+func InitConfig() {
+	once.Do(func() {
+		viper.SetEnvPrefix("")
+		viper.AutomaticEnv() // Bind directly to OS Env
+
+		// Fallback Default Value
+		viper.SetDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
+		viper.SetDefault("OPENAI_MODEL", "gpt-4o")
+	})
 }
 
 func SaveConfig() error {
