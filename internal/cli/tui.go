@@ -182,6 +182,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.executingTool = ""
 				m.updateViewport()
 
+				m.eventChan = make(chan types.AgentEvent, 100)
+				m.errChan = make(chan error, 1)
 				ctx, cancel := context.WithCancel(context.Background())
 				m.cancel = cancel
 
