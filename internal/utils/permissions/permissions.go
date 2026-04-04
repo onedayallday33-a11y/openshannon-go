@@ -76,16 +76,19 @@ func IsCommandSafe(command string, cwd string) (bool, string) {
 		return false, "Command contains suspicious Windows path patterns (NTFS streams or shortnames)"
 	}
 
-	// 4. Detect forbidden files/directories in the command string
+	// 4. Detect forbidden files/directories in the command string with boundary checks
 	for _, file := range DangerousFiles {
-		if strings.Contains(lowerCmd, file) {
+		// Matches the file name if it stands alone or is part of a path, but not as a substring of another name
+		// Example: blocks "cat .bashrc", "ls ./.bashrc", but allows "vim .bashrc.bak"
+		pattern := regexp.MustCompile(`(?i)(^|[\s/\\"'|;&])` + regexp.QuoteMeta(file) + `($|[\s/\\"'|;&])`)
+		if pattern.MatchString(command) {
 			return false, fmt.Sprintf("Command mentions restricted file: %s", file)
 		}
 	}
 	for _, dir := range DangerousDirectories {
-		// Boundary check to avoid false positives (e.g., "my.git.repo")
-		if strings.Contains(lowerCmd, dir+"/") || strings.Contains(lowerCmd, dir+"\\") || 
-		   strings.HasSuffix(lowerCmd, dir) || strings.Contains(lowerCmd, " "+dir) {
+		// Example: blocks "ls .git/", "cd .git", allows "git config" or "my.git.repo"
+		pattern := regexp.MustCompile(`(?i)(^|[\s/\\"'|;&])` + regexp.QuoteMeta(dir) + `(/|\\|$|[\s"'|;&])`)
+		if pattern.MatchString(command) {
 			return false, fmt.Sprintf("Command mentions restricted directory: %s", dir)
 		}
 	}
