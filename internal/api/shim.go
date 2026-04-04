@@ -37,67 +37,77 @@ func ConvertRequest(req *AnthropicMessageRequest) *OpenAIChatRequest {
 
 	// Translate Messages
 	for _, m := range req.Messages {
-		var openaiContent interface{}
-		var toolCalls []OpenAIToolCall
-		var toolCallID string
-
 		switch content := m.Content.(type) {
 		case string:
-			openaiContent = content
+			openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage{
+				Role:    m.Role,
+				Content: content,
+			})
 		case []types.ContentBlock:
-			// If it's just one text block, many APIs prefer a string
-			if len(content) == 1 && content[0].Type == "text" {
-				openaiContent = content[0].Text
-			} else {
-				var blocks []interface{}
-				for _, b := range content {
-					switch b.Type {
-					case "text":
-						blocks = append(blocks, map[string]interface{}{
-							"type": "text",
-							"text": b.Text,
+			var currentBlocks []interface{}
+			var toolCalls []OpenAIToolCall
+
+			for _, b := range content {
+				switch b.Type {
+				case "text":
+					currentBlocks = append(currentBlocks, map[string]interface{}{
+						"type": "text",
+						"text": b.Text,
+					})
+				case "tool_use":
+					argsJSON, _ := json.Marshal(b.ToolUse.Input)
+					toolCalls = append(toolCalls, OpenAIToolCall{
+						ID:   b.ToolUse.ID,
+						Type: "function",
+						Function: OpenAIToolFunction{
+							Name:      b.ToolUse.Name,
+							Arguments: string(argsJSON),
+						},
+					})
+				case "tool_result":
+					// If we have accumulated text/tool_use, flush them first
+					if len(currentBlocks) > 0 || len(toolCalls) > 0 {
+						var content interface{}
+						if len(currentBlocks) == 1 && currentBlocks[0].(map[string]interface{})["type"] == "text" {
+							content = currentBlocks[0].(map[string]interface{})["text"]
+						} else if len(currentBlocks) > 0 {
+							content = currentBlocks
+						}
+						
+						openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage{
+							Role:      m.Role,
+							Content:   content,
+							ToolCalls: toolCalls,
 						})
-					case "tool_use":
-						argsJSON, _ := json.Marshal(b.ToolUse.Input)
-						toolCalls = append(toolCalls, OpenAIToolCall{
-							ID:   b.ToolUse.ID,
-							Type: "function",
-							Function: OpenAIToolFunction{
-								Name:      b.ToolUse.Name,
-								Arguments: string(argsJSON),
-							},
-						})
-					case "tool_result":
-						// OpenAI handles tool results as a separate message role "tool"
-						// But here we are still inside the message loop.
-						// We'll handle "tool" role below.
-						toolCallID = b.ToolResult.ToolUseID
-						openaiContent = fmt.Sprintf("%v", b.ToolResult.Content)
+						currentBlocks = nil
+						toolCalls = nil
 					}
-				}
-				if len(blocks) > 0 {
-					openaiContent = blocks
+					
+					// Now add the tool result as a separate message
+					openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage{
+						Role:       "tool",
+						Content:    fmt.Sprintf("%v", b.ToolResult.Content),
+						ToolCallID: b.ToolResult.ToolUseID,
+					})
 				}
 			}
-		}
 
-		role := m.Role
-		if m.Role == "user" && toolCallID != "" {
-			role = "tool"
-		}
+			// Final flush for remaining blocks
+			if len(currentBlocks) > 0 || len(toolCalls) > 0 {
+				var content interface{}
+				if len(currentBlocks) == 1 && currentBlocks[0].(map[string]interface{})["type"] == "text" {
+					content = currentBlocks[0].(map[string]interface{})["text"]
+				} else if len(currentBlocks) > 0 {
+					content = currentBlocks
+				}
 
-		msg := OpenAIMessage{
-			Role:    role,
-			Content: openaiContent,
+				openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage{
+					Role:      m.Role,
+					Content:   content,
+					ToolCalls: toolCalls,
+				})
+			}
 		}
-		if len(toolCalls) > 0 {
-			msg.ToolCalls = toolCalls
-		}
-		if toolCallID != "" {
-			msg.ToolCallID = toolCallID
-		}
-
-		openaiReq.Messages = append(openaiReq.Messages, msg)
 	}
 
 	// Translate Tools

@@ -177,7 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.executingTool = ""
 				m.updateViewport()
 
-				m.eventChan = make(chan types.AgentEvent)
+				m.eventChan = make(chan types.AgentEvent, 100)
 				m.errChan = make(chan error, 1)
 
 				return m, tea.Batch(
@@ -568,7 +568,7 @@ func (m Model) waitForStream(ch chan types.AgentEvent, errCh chan error) tea.Cmd
 			return errMsg{err}
 		case ev, ok := <-ch:
 			if !ok {
-				return nil
+				return eventMsg{Type: "IDLE"}
 			}
 			if ev.Type == "FINISH" {
 				return finishMsg(ev.Text)

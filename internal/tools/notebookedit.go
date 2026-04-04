@@ -23,7 +23,7 @@ type NotebookCell struct {
 	Metadata       map[string]interface{} `json:"metadata"`
 	Source         []string               `json:"source"`
 	Outputs        []interface{}          `json:"outputs,omitempty"`
-	ExecutionCount *int                   `json:"execution_count,omitempty"`
+	ExecutionCount *int                   `json:"execution_count"`
 }
 
 // NotebookEditTool implements the Tool interface for editing notebooks
@@ -118,11 +118,6 @@ func (t *NotebookEditTool) Execute(ctx context.Context, args map[string]interfac
 			Metadata: make(map[string]interface{}),
 			Source:   []string{source},
 		}
-		if cellType == "code" {
-			newCell.Outputs = []interface{}{}
-			zero := 0
-			newCell.ExecutionCount = &zero
-		}
 
 		if action == "update" {
 			if index < 0 || index >= len(nb.Cells) {
@@ -138,7 +133,7 @@ func (t *NotebookEditTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	// 3. Write back
-	output, err := json.MarshalIndent(nb, "", " ")
+	output, err := json.MarshalIndent(nb, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal notebook: %v", err)
 	}

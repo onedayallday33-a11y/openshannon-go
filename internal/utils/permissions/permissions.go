@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -44,9 +45,14 @@ func IsCommandSafe(command string, cwd string) (bool, string) {
 		for _, dc := range DangerousCommands {
 			if base == dc {
 				// Special check: rm -rf / or similar broad deletes
-				if base == "rm" && (strings.Contains(lowerCmd, "/") || strings.Contains(lowerCmd, "*")) && !strings.Contains(lowerCmd, "./") {
-					// This is a naive check; full AST parsing would be better but this is a start.
-					return false, fmt.Sprintf("Command '%s' with broad arguments is restricted for security reasons", base)
+				if base == "rm" && (strings.Contains(lowerCmd, "/") || strings.Contains(lowerCmd, "*")) {
+					// Disallow deletions of root, parent directories, or broad wildcard deletes
+					// Caught patterns: " /", " *", " ..", " ./*", " ../*", etc.
+					if strings.Contains(lowerCmd, " /") || strings.Contains(lowerCmd, " ..") || 
+					   strings.Contains(lowerCmd, " *") || strings.HasSuffix(lowerCmd, " *") ||
+					   strings.Contains(lowerCmd, " ./") || strings.Contains(lowerCmd, " .\\") {
+						return false, fmt.Sprintf("Command '%s' with broad arguments is restricted for security reasons", base)
+					}
 				}
 			}
 		}
@@ -159,8 +165,8 @@ func hasSuspiciousWindowsPattern(path string, cwd string) bool {
 	// Standardize separators for Windows-safe comparison
 	path = filepath.ToSlash(strings.ToLower(path))
 	
-	// 1. Check for NTFS Alternate Data Streams (colon after drive letter)
-	if len(path) > 3 {
+	// 1. Check for NTFS Alternate Data Streams (Windows only)
+	if runtime.GOOS == "windows" && len(path) > 3 {
 		remaining := path[3:]
 		if strings.Contains(remaining, ":") {
 			return true

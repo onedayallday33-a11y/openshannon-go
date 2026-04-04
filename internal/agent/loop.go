@@ -156,7 +156,11 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		for idx, tool := range currentTools {
 			var input map[string]interface{}
 			if sb, ok := currentToolJSON[idx]; ok {
-				json.Unmarshal([]byte(sb.String()), &input)
+				if err := json.Unmarshal([]byte(sb.String()), &input); err != nil {
+					// Fallback: use an empty map if JSON is invalid, but log the error
+					fmt.Printf("Warning: failed to parse tool input: %v\n", err)
+					input = make(map[string]interface{})
+				}
 			}
 			tool.Input = input
 			assistantMessage.Content = append(assistantMessage.Content, types.ContentBlock{

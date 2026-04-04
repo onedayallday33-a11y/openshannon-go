@@ -113,7 +113,16 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) (in
 
 	// Wait for command completion or timeout
 	err = cmd.Wait()
-	<-done
+	
+	// Close stdout to ensure the reader goroutine exits
+	stdout.Close()
+
+	// Wait for reader with a short timeout to be safe
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		fmt.Println("Warning: bash reader goroutine timed out")
+	}
 
 	interrupted := false
 	if execCtx.Err() == context.DeadlineExceeded {

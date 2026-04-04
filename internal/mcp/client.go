@@ -81,6 +81,12 @@ func (c *McpClient) Call(ctx context.Context, method string, params interface{})
 		Params:  params,
 	}
 
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+	}()
+
 	if err := c.Transport.Send(req); err != nil {
 		return nil, err
 	}
