@@ -70,10 +70,12 @@ type Model struct {
 	// Channels for streaming
 	eventChan chan types.AgentEvent
 	errChan   chan error
-
 	// Cache
 	renderedHistory string
 	cachedHeader    string
+
+	// Context for cancellation
+	cancel context.CancelFunc
 }
 
 func NewModel(a *agent.Agent) Model {
@@ -158,6 +160,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if kmsg, ok := msg.(tea.KeyMsg); ok {
 		switch kmsg.Type {
 		case tea.KeyCtrlC:
+			if m.cancel != nil {
+				m.cancel()
+			}
 			return m, tea.Quit
 		case tea.KeyEnter:
 			if kmsg.Alt {
@@ -177,12 +182,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.executingTool = ""
 				m.updateViewport()
 
-				m.eventChan = make(chan types.AgentEvent, 100)
-				m.errChan = make(chan error, 1)
+				ctx, cancel := context.WithCancel(context.Background())
+				m.cancel = cancel
 
 				return m, tea.Batch(
 					m.spinner.Tick,
-					m.runAgent(userPrompt),
+					m.runAgent(ctx, userPrompt),
 				)
 			}
 			return m, nil
@@ -295,6 +300,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case types.EventThinkingStart:
 			m.executingTool = ""
 			m.currResponse = ""
+		case "IDLE":
+			return m, nil
 		}
 		m.updateViewport()
 		return m, m.waitForStream(m.eventChan, m.errChan)
@@ -539,13 +546,12 @@ func (m Model) View() string {
 	)
 }
 
-func (m Model) runAgent(prompt string) tea.Cmd {
+func (m Model) runAgent(ctx context.Context, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		if m.errChan == nil || m.eventChan == nil {
 			return errMsg{fmt.Errorf("channels not initialized")}
 		}
 
-		ctx := context.Background()
 		go func() {
 			output, err := m.agent.Run(ctx, prompt, func(ev types.AgentEvent) {
 				m.eventChan <- ev
