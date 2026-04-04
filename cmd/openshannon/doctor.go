@@ -19,8 +19,8 @@ var doctorCmd = &cobra.Command{
 		if config.UseOpenAI() {
 			fmt.Println("✅ CLAUDE_CODE_USE_OPENAI is enabled")
 			if key := config.OpenAIApiKey(); key == "" {
-                 // OpenAIApiKey could be optional for Local Models, but we warn.
-				fmt.Println("⚠️  OPENAI_API_KEY is not set (might be OK for local models)")
+				fmt.Println("❌ OPENAI_API_KEY is not set")
+				allSpecsMet = false
 			} else {
 				fmt.Println("✅ OPENAI_API_KEY is present")
 			}

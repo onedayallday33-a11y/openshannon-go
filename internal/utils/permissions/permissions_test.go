@@ -23,12 +23,15 @@ func TestIsReadAllowed(t *testing.T) {
 		{"NTFS Stream", "file.txt::$DATA", false},
 		{"8.3 Short name", "PROGRA~1", false},
 		{"Trailing dot", "file.txt.", false},
+		{"Absolute path sensitive", filepath.Join(cwd, ".bashrc"), false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			allowed, _ := IsReadAllowed(tt.path, cwd)
-			assert.Equal(t, tt.allowed, allowed)
+			allowed, msg := IsReadAllowed(tt.path, cwd)
+			if allowed != tt.allowed {
+				t.Errorf("Path: %s, Expected allowed: %v, Actual: %v, Message: %s", tt.path, tt.allowed, allowed, msg)
+			}
 		})
 	}
 }

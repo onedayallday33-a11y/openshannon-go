@@ -61,6 +61,9 @@ func TestBashTool_Execute(t *testing.T) {
 	})
 
 	t.Run("Security violation: NTFS Stream", func(t *testing.T) {
+		if runtime.GOOS != "windows" {
+			t.Skip("NTFS Stream check is Windows-only")
+		}
 		args := map[string]interface{}{"command": "echo hello > file.txt:stream"}
 		_, err := tool.Execute(ctx, args)
 		assert.Error(t, err)

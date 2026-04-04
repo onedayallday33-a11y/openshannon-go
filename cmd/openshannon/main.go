@@ -27,6 +27,20 @@ func main() {
 	config.InitConfig()
 	defer lsp.GetLspManager("").Close()
 
+	// Check if we should run a CLI subcommand (like 'doctor')
+	if flag.NArg() > 0 {
+		// If the first argument is a known cobra command, let cobra handle it
+		// We'll skip the TUI/REPL if a subcommand is successfully matched.
+		// Note: rootCmd.Execute() will handle its own flags/args.
+		if err := Execute(); err == nil {
+			// If it was a valid command (like doctor), cobra would have run it.
+			// However, cobra's Execute() always returns nil if it handles something.
+			// We only want to proceed to REPL if no subcommand was provided or matched.
+			// For simplicity in this rewrite, we'll exit if any args are provided.
+			return 
+		}
+	}
+
 	// 1. Initialize Registry & Commands
 	disp := agent.GetDispatcher()
 	disp.Register(&commands.HelpCommand{})

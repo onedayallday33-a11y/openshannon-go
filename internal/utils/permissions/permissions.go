@@ -155,7 +155,9 @@ func IsWriteAllowed(path string, cwd string) (bool, string) {
 }
 
 func isInsideDangerousDir(path string) bool {
-	segments := strings.Split(path, string(os.PathSeparator))
+	// Use ToSlash for consistent segment splitting
+	normalizedPath := filepath.ToSlash(path)
+	segments := strings.Split(normalizedPath, "/")
 	for _, segment := range segments {
 		lowerSegment := strings.ToLower(segment)
 		for _, dir := range DangerousDirectories {
@@ -179,52 +181,54 @@ func isDangerousFile(path string) bool {
 }
 
 func hasSuspiciousWindowsPattern(path string, cwd string) bool {
-	if runtime.GOOS != "windows" {
-		return false
+	// Standardize for consistent pattern matching across platforms
+	normPath := filepath.ToSlash(strings.ToLower(path))
+
+	// 1. Check for trailing dots or spaces - dangerous/confusing on many platforms
+	if strings.HasSuffix(normPath, ".") || strings.HasSuffix(normPath, " ") {
+		return true
 	}
 
-	// Standardize separators for Windows-safe comparison
-	path = filepath.ToSlash(strings.ToLower(path))
-	
-	// 1. Check for NTFS Alternate Data Streams (Windows only)
-	if len(path) > 3 {
-		remaining := path[3:]
+	// 2. Check for NTFS Alternate Data Streams (typically contains ':')
+	// Even on Unix, ':' in a filename is rare/suspicious for an agent to be accessing.
+	if len(normPath) > 3 {
+		// On Windows paths like C:/, the ':' at index 1 is allowed
+		remaining := normPath
+		if len(normPath) >= 2 && normPath[1] == ':' {
+			remaining = normPath[2:]
+		}
 		if strings.Contains(remaining, ":") {
 			return true
 		}
 	}
 
-	// 2. Check for 8.3 short names (e.g., ~1)
-	if shortNameRegex.MatchString(path) {
-		// Whitelist shortname patterns if they are part of legitimate system paths.
-		// GitHub Actions Windows runners inherently use RUNNER~1 in TEMP/USERPROFILE.
-		
-		// Check against CWD
-		if cwd != "" && shortNameRegex.MatchString(cwd) {
-			absCwd, _ := filepath.Abs(cwd)
-			normCwd := filepath.ToSlash(strings.ToLower(absCwd))
-			if strings.Contains(path, normCwd) {
+	// 3. Check for 8.3 short names (e.g., ~1)
+	if shortNameRegex.MatchString(normPath) {
+		// Only whitelist system shortnames if we are actually on Windows.
+		// On non-Windows, ~N in a filename is just suspicious for security purposes.
+		if runtime.GOOS == "windows" {
+			// Check against CWD
+			if cwd != "" {
+				absCwd, _ := filepath.Abs(cwd)
+				normCwd := filepath.ToSlash(strings.ToLower(absCwd))
+				if strings.Contains(normPath, normCwd) {
+					return false
+				}
+			}
+
+			// Check against TEMP directory
+			tempDir := filepath.ToSlash(strings.ToLower(os.TempDir()))
+			if strings.Contains(normPath, tempDir) {
+				return false
+			}
+
+			// Check against USERPROFILE directory
+			userProfile := filepath.ToSlash(strings.ToLower(os.Getenv("USERPROFILE")))
+			if userProfile != "" && strings.Contains(normPath, userProfile) {
 				return false
 			}
 		}
 
-		// Check against TEMP directory
-		tempDir := filepath.ToSlash(strings.ToLower(os.TempDir()))
-		if strings.Contains(path, tempDir) {
-			return false
-		}
-
-		// Check against USERPROFILE directory
-		userProfile := filepath.ToSlash(strings.ToLower(os.Getenv("USERPROFILE")))
-		if userProfile != "" && strings.Contains(path, userProfile) {
-			return false
-		}
-
-		return true
-	}
-
-	// 3. Check for trailing dots or spaces
-	if strings.HasSuffix(path, ".") || strings.HasSuffix(path, " ") {
 		return true
 	}
 

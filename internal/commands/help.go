@@ -18,15 +18,13 @@ func (c *HelpCommand) Name() string { return "help" }
 func (c *HelpCommand) Description() string { return "Show available commands" }
 
 func (c *HelpCommand) Execute(ctx context.Context, a *agent.Agent, args []string) (agent.DirectCommandResult, error) {
-	// Note: In a real app, we'd fetch this from the current dispatcher's registry.
-	// For now, let's list the ones we're implementing.
+	registeredCmds := agent.GetDispatcher().GetRegisteredCommands()
 	
-	cmds := []struct{ name, desc string }{
-		{"help", "Show available commands"},
-		{"doctor", "Check environment health"},
-		{"compact", "Truncate conversation history"},
-		{"review", "Review a file or diff"},
-		{"commit", "Generate a git commit message"},
+	// Convert to sortable slice
+	type cmdInfo struct{ name, desc string }
+	cmds := make([]cmdInfo, 0, len(registeredCmds))
+	for _, rc := range registeredCmds {
+		cmds = append(cmds, cmdInfo{rc.Name(), rc.Description()})
 	}
 
 	sort.Slice(cmds, func(i, j int) bool { return cmds[i].name < cmds[j].name })
