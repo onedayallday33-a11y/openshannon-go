@@ -105,4 +105,24 @@ func TestFileEditTool_Execute(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "security violation")
 	})
+
+	t.Run("Normalization: CRLF to LF", func(t *testing.T) {
+		crlfFile := "crlf.txt"
+		os.WriteFile(crlfFile, []byte("line1\r\nline2\r\nline3"), 0644)
+		args := map[string]interface{}{
+			"file_path": crlfFile,
+			"edits": []interface{}{
+				map[string]interface{}{
+					"old_string": "line1\nline2",
+					"new_string": "replaced\ntext",
+				},
+			},
+		}
+		_, err := tool.Execute(ctx, args)
+		require.NoError(t, err)
+		
+		newContent, _ := os.ReadFile(crlfFile)
+		assert.Contains(t, string(newContent), "replaced\ntext")
+		assert.NotContains(t, string(newContent), "\r\n") // Verify it's now LF
+	})
 }

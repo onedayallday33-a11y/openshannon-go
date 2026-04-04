@@ -82,7 +82,7 @@ func (t *FileEditTool) Execute(ctx context.Context, args map[string]interface{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %v", err)
 	}
-	content := string(contentBytes)
+	content := normalizeLineEndings(string(contentBytes))
 
 	// 3. Apply Edits
 	updatedContent := content
@@ -94,17 +94,11 @@ func (t *FileEditTool) Execute(ctx context.Context, args map[string]interface{})
 			return nil, fmt.Errorf("edit at index %d is invalid", i)
 		}
 
-		oldStr, _ := e["old_string"].(string)
-		newStr, _ := e["new_string"].(string)
+		oldStr := normalizeLineEndings(e["old_string"].(string))
+		newStr := normalizeLineEndings(e["new_string"].(string))
 		replaceAll, _ := e["replace_all"].(bool)
 
-		// Normalization: Handle line ending mismatches (\r\n vs \n)
-		// We normalize both strings to \n for comparison, but try to keep file's original style for the replacement.
-		
-		normalizedOld := normalizeLineEndings(oldStr)
-		normalizedContent := normalizeLineEndings(updatedContent)
-
-		if !strings.Contains(normalizedContent, normalizedOld) {
+		if !strings.Contains(updatedContent, oldStr) {
 			return nil, fmt.Errorf("edit at index %d failed: 'old_string' not found in file (hint: ensure exact match including whitespace)", i)
 		}
 

@@ -170,6 +170,9 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 		// 5. Execute tools if any
 		hasToolUse := len(currentTools) > 0
 		if !hasToolUse {
+			if a.OnTurnEnd != nil {
+				a.OnTurnEnd(a)
+			}
 			return finalText, nil
 		}
 
@@ -211,14 +214,13 @@ func (a *Agent) Run(ctx context.Context, prompt string, onEvent func(types.Agent
 				})
 			}
 		}
-
-			if a.OnTurnEnd != nil {
-				a.OnTurnEnd(a)
-			}
+		if a.OnTurnEnd != nil {
+			a.OnTurnEnd(a)
 		}
-
-		return "", fmt.Errorf("reached max turns (%d) without final answer", a.Config.MaxTurns)
 	}
+
+	return "", fmt.Errorf("reached max turns (%d) without final answer", a.Config.MaxTurns)
+}
 
 func (a *Agent) toAnthropicMessages() []api.AnthropicMessage {
 	if len(a.History) == 0 {

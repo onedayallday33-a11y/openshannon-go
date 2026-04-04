@@ -11,6 +11,8 @@ import (
 
 // AgentTool implements the Tool interface to spawn sub-agents
 type AgentTool struct {
+	// Model to use for the sub-agent
+	Model string
 	// BaseTools to provide to the sub-agent
 	BaseTools []toolapi.Tool
 }
@@ -48,7 +50,7 @@ func (t *AgentTool) Execute(ctx context.Context, args map[string]interface{}) (i
 
 	// 1. Create Sub-Agent with a sub-session ID
 	subAgent := agent.NewAgent("sub-agent", types.AgentConfig{
-		Model:    "claude-3-sonnet",
+		Model:    t.Model,
 		MaxTurns: 10,
 		System:   "You are a helpful sub-agent assistant. Complete the objective and return the result as plain text.",
 		Tools:    t.BaseTools,

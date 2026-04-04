@@ -67,6 +67,10 @@ type Model struct {
 	isDragging      bool
 	dragStartY      int
 	
+	// Channels for streaming
+	eventChan chan types.AgentEvent
+	errChan   chan error
+
 	// Cache
 	renderedHistory string
 	cachedHeader    string
@@ -172,6 +176,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currResponse = ""
 				m.executingTool = ""
 				m.updateViewport()
+
+				m.eventChan = make(chan types.AgentEvent)
+				m.errChan = make(chan error, 1)
+
 				return m, tea.Batch(
 					m.spinner.Tick,
 					m.runAgent(userPrompt),
@@ -289,7 +297,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currResponse = ""
 		}
 		m.updateViewport()
-		return m, nil
+		return m, m.waitForStream(m.eventChan, m.errChan)
 
 	case finishMsg:
 		m.renderedHistory = "" // Invalidate cache on new message
@@ -533,22 +541,23 @@ func (m Model) View() string {
 
 func (m Model) runAgent(prompt string) tea.Cmd {
 	return func() tea.Msg {
-		ch := make(chan types.AgentEvent)
-		errCh := make(chan error, 1)
+		if m.errChan == nil || m.eventChan == nil {
+			return errMsg{fmt.Errorf("channels not initialized")}
+		}
 
 		ctx := context.Background()
 		go func() {
 			output, err := m.agent.Run(ctx, prompt, func(ev types.AgentEvent) {
-				ch <- ev
+				m.eventChan <- ev
 			})
 			if err != nil {
-				errCh <- err
+				m.errChan <- err
 				return
 			}
-			ch <- types.AgentEvent{Type: "FINISH", Text: output}
+			m.eventChan <- types.AgentEvent{Type: "FINISH", Text: output}
 		}()
 
-		return m.waitForStream(ch, errCh)()
+		return m.waitForStream(m.eventChan, m.errChan)()
 	}
 }
 
@@ -564,7 +573,7 @@ func (m Model) waitForStream(ch chan types.AgentEvent, errCh chan error) tea.Cmd
 			if ev.Type == "FINISH" {
 				return finishMsg(ev.Text)
 			}
-			return tea.Sequence(func() tea.Msg { return eventMsg(ev) }, m.waitForStream(ch, errCh))()
+			return eventMsg(ev)
 		}
 	}
 }

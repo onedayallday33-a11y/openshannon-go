@@ -58,13 +58,13 @@ func ConvertRequest(req *AnthropicMessageRequest) *OpenAIChatRequest {
 							"text": b.Text,
 						})
 					case "tool_use":
-						// OpenAI handles tool use via ToolCalls field, not content
+						argsJSON, _ := json.Marshal(b.ToolUse.Input)
 						toolCalls = append(toolCalls, OpenAIToolCall{
 							ID:   b.ToolUse.ID,
 							Type: "function",
 							Function: OpenAIToolFunction{
 								Name:      b.ToolUse.Name,
-								Arguments: "{}", // Will be filled if needed, but usually we send results
+								Arguments: string(argsJSON),
 							},
 						})
 					case "tool_result":

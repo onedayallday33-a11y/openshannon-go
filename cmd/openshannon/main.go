@@ -11,6 +11,7 @@ import (
 	"github.com/onedayallday33-a11y/openshannon-go/internal/config"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/memory"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/profile"
+	"github.com/onedayallday33-a11y/openshannon-go/internal/toolapi"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/tools"
 	"github.com/onedayallday33-a11y/openshannon-go/internal/types"
 )
@@ -77,16 +78,21 @@ func main() {
 	}
 
 	// Register Core Tools
-	agentCfg.Tools = append(agentCfg.Tools, 
-		&tools.FileReadTool{}, 
-		&tools.FileWriteTool{}, 
+	coreTools := []toolapi.Tool{
+		&tools.FileReadTool{},
+		&tools.FileWriteTool{},
 		&tools.FileEditTool{},
 		&tools.BashTool{},
 		&tools.GrepTool{},
 		&tools.GlobTool{},
 		&tools.WebFetchTool{},
 		&tools.WebSearchTool{},
-	)
+	}
+	agentCfg.Tools = append(agentCfg.Tools, coreTools...)
+	agentCfg.Tools = append(agentCfg.Tools, &tools.AgentTool{
+		Model:     agentCfg.Model,
+		BaseTools: coreTools,
+	})
 	
 	sessionID := fmt.Sprintf("session_%d", time.Now().Unix())
 	a := agent.NewAgent(sessionID, agentCfg)

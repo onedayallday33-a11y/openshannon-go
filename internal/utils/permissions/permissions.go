@@ -29,8 +29,8 @@ var (
 	}
 
 	// Redirection pattern to detect attempts to write via shell
-	// Matches > or >> followed by a path
-	redirectRegex = regexp.MustCompile(`[>]{1,2}\s*([^\s|;&]+)`)
+	// Matches >, >>, 2>, &>, etc. followed by a path
+	redirectRegex = regexp.MustCompile(`(?:[12&]?>{1,2})\s*([^\s|;&]+)`)
 )
 
 // IsCommandSafe checks if a shell command is safe to execute

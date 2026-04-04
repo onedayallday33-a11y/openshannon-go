@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -105,14 +104,9 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]interface{}) (in
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				if err != io.EOF {
-					fmt.Fprintf(os.Stderr, "Error reading command output: %v\n", err)
-				}
 				break
 			}
 			output.WriteString(line)
-			// In a real TUI we would stream this to the UI here
-			fmt.Print(line) 
 		}
 		done <- true
 	}()

@@ -74,6 +74,12 @@ func (c *LspClient) Call(ctx context.Context, method string, params interface{})
 	c.pending[id] = ch
 	c.mu.Unlock()
 
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+	}()
+
 	req := LspRequest{
 		Jsonrpc: "2.0",
 		ID:      id,
